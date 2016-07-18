@@ -23,6 +23,7 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/netfilter_ipv4.h>
+#include "libcrc/crc.h"
 
 static struct nf_hook_ops hook_options;
 
@@ -36,35 +37,53 @@ mangling_hook(unsigned int hook_num,
 
     struct iphdr *iph;
     struct tcphdr *tcph;
-    /*
-     * Get IP header and check the transport protocol. Proceed only if it's
-     * TCP
-     */
+
+    u8* tcp_pl;
+    u8 signature[2] = {0x0A, 0x0A};
+    u64 np_data_tcp_pl = 0;
+    
+    crc_t crc;
+    crc_params_t crc_params;
+   
+    /* Get IP header and check the transport protocol. Proceed only if it's TCP */
     iph = ip_hdr(skb);
     if (iph->protocol != IPPROTO_TCP)
         return NF_ACCEPT;
 
-    tcph = tcp_hdr(skb);
-
-    /* Get a pointer to the TCP payload */
-    u8* tcp_pl;
-    u8 signature[2] = {0x0A, 0x0B};
-    u64 np_data_tcp_pl = 0;
+    /* Check if the skb is linear. If not, do not consider it. Linear means
+     * skb->data_len is == 0 */
+    if(skb_is_nonlinear(skb)) 
+        return NF_ACCEPT;
     
+    tcph = tcp_hdr(skb);
     tcp_pl = (u8*)((u8*)tcph + (tcph->doff * 4));
-    if(memcmp(&signature, tcp_pl, 2) == 0)
+    np_data_tcp_pl = (u64)(skb_tail_pointer(skb) - tcp_pl);
+
+    if(np_data_tcp_pl >= 2 && memcmp(&signature, tcp_pl, 2) == 0)
     {
-        printk(KERN_INFO "Signature detected\n");
+        // Some debug info  
+        //printk(KERN_INFO "Linear data: %u\n", skb_headlen(skb));
+        //printk(KERN_INFO "Linear data TCP payload: %lu\n", np_data_tcp_pl);
 
-        if(skb->data_len != 0) 
-            printk(KERN_INFO "Non linear data present\n");
-        
-        printk(KERN_INFO "Linear data: %u\n", skb_headlen(skb));
-        np_data_tcp_pl = (u64)(skb_tail_pointer(skb) - tcp_pl);
-        printk(KERN_INFO "Linear data TCP payload: %lu\n", np_data_tcp_pl);
+        crc_params.type = CRC32;
+        crc_params.poly.poly_crc32 = 0x04C11DB7;
+        crc_params.crc_init.crc32 = 0xFFFFFFFF;
+        crc_params.flags = CRC_INPUT_REVERSAL | 
+                           CRC_OUTPUT_REVERSAL | 
+                           CRC_OUTPUT_INVERSION;
 
-        if(np_data_tcp_pl >= 3)
-            printk(KERN_INFO "Can do some mangling here! 0x%x\n", tcp_pl[2]);
+        crc = crc_fast(&crc_params,(uint8_t*)skb->data, skb_headlen(skb));
+
+        printk(KERN_INFO "CRC before corruption: %x\n", crc.crc32);
+        *(tcp_pl) = 0x00;
+        *(tcp_pl+1) = 0x00;
+
+        crc = crc_fast(&crc_params,(uint8_t*)skb->data, skb_headlen(skb));
+        printk(KERN_INFO "CRC after corruption: %x\n", crc.crc32);
+
+        /* Leave checksum as it is */
+        skb->ip_summed = CHECKSUM_NONE;
+
     }
 
     return NF_ACCEPT;
