@@ -28,11 +28,9 @@
 static struct nf_hook_ops hook_options;
 
 unsigned int 
-mangling_hook(unsigned int hook_num,
+mangling_hook(void *priv,
               struct sk_buff *skb,
-              const struct net_device *in,
-              const struct net_device *out,
-              int (*okfn)(struct sk_buff *))  
+              const struct nf_hook_state *state)
 {
 
     struct iphdr *iph;
@@ -95,11 +93,9 @@ mangling_hook(unsigned int hook_num,
 static int 
 register_hook(void)
 {
-    hook_options.hook = (unsigned int(*)(unsigned int, 
+    hook_options.hook = (unsigned int (*)(void *,
                                          struct sk_buff*, 
-                                         const struct net_device*, 
-                                         const struct net_device*, 
-                                         int (*)(struct sk_buff*)))mangling_hook;
+                                         const struct nf_hook_state*))mangling_hook;
 
     hook_options.hooknum = NF_INET_POST_ROUTING;
     hook_options.pf = PF_INET;
