@@ -13,7 +13,7 @@ $(LIBCRC_DIR)/libcrc.a:
 	# Not relying on Kbuild, need to define include paths manually.
 	# isystem is evaluated after -I and before default system include paths
 	make -C $(LIBCRC_DIR) libcrc.a \
-	EXTRA_CFLAGS+="-D__KERNEL__ -isystem $(KERNEL_SRC)/include -isystem $(KERNEL_SRC)/arch/x86/include"
+	EXTRA_CFLAGS+="-D__KERNEL__ -isystem $(KERNEL_SRC)/include -isystem $(KERNEL_SRC)/arch/x86/include -mcmodel=kernel"
 
 clean:
 	make -C libcrc $@
