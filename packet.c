@@ -23,7 +23,6 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/netfilter_ipv4.h>
-#include "libcrc/crc.h"
 
 static struct nf_hook_ops hook_options;
 
@@ -40,8 +39,6 @@ mangling_hook(void *priv,
     u8 signature[2] = {0x0A, 0x0A};
     u64 np_data_tcp_pl = 0;
     
-    crc_t crc;
-    crc_params_t crc_params;
    
     /* Get IP header and check the transport protocol. Proceed only if it's TCP */
     iph = ip_hdr(skb);
@@ -60,24 +57,8 @@ mangling_hook(void *priv,
     if(np_data_tcp_pl >= 2 && memcmp(&signature, tcp_pl, 2) == 0)
     {
         // Some debug info  
-        //printk(KERN_INFO "Linear data: %u\n", skb_headlen(skb));
-        //printk(KERN_INFO "Linear data TCP payload: %lu\n", np_data_tcp_pl);
-
-        crc_params.type = CRC32;
-        crc_params.poly.poly_crc32 = 0x04C11DB7;
-        crc_params.crc_init.crc32 = 0xFFFFFFFF;
-        crc_params.flags = CRC_INPUT_REVERSAL | 
-                           CRC_OUTPUT_REVERSAL | 
-                           CRC_OUTPUT_INVERSION;
-
-        crc = crc_fast(&crc_params,(uint8_t*)skb->data, skb_headlen(skb));
-
-        printk(KERN_INFO "CRC before corruption: %x\n", crc.crc32);
-        *(tcp_pl) = 0x00;
-        *(tcp_pl+1) = 0x00;
-
-        crc = crc_fast(&crc_params,(uint8_t*)skb->data, skb_headlen(skb));
-        printk(KERN_INFO "CRC after corruption: %x\n", crc.crc32);
+        printk(KERN_INFO "Linear data: %u\n", skb_headlen(skb));
+        printk(KERN_INFO "Linear data TCP payload: %lu\n", np_data_tcp_pl);
 
         /* Leave checksum as it is */
         skb->ip_summed = CHECKSUM_NONE;
