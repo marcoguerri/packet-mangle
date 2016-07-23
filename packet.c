@@ -22,7 +22,12 @@
 #include <linux/vmalloc.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
+#include <net/tcp.h>
 #include <linux/netfilter_ipv4.h>
+
+#include "checksum.h"
+
+#define TCP_PSEUDOHEADER_LEN 12
 
 static struct nf_hook_ops hook_options;
 
@@ -35,9 +40,10 @@ mangling_hook(void *priv,
     struct iphdr *iph;
     struct tcphdr *tcph;
 
-    u8* tcp_pl;
-    u8 signature[2] = {0x0A, 0x0A};
-    u64 np_data_tcp_pl = 0;
+    u8 *tcp_payload, *pseudo_header, *buffer;
+    u8 signature[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+    u32 tcp_payload_len = 0, tcp_header_len = 0;
+    uint16_t checksum;
     
    
     /* Get IP header and check the transport protocol. Proceed only if it's TCP */
@@ -51,18 +57,57 @@ mangling_hook(void *priv,
         return NF_ACCEPT;
     
     tcph = tcp_hdr(skb);
-    tcp_pl = (u8*)((u8*)tcph + (tcph->doff * 4));
-    np_data_tcp_pl = (u64)(skb_tail_pointer(skb) - tcp_pl);
 
-    if(np_data_tcp_pl >= 2 && memcmp(&signature, tcp_pl, 2) == 0)
+    tcp_payload = (u8*)((u8*)tcph + (tcph->doff * 4));
+    tcp_payload_len = (u64)(skb_tail_pointer(skb) - tcp_payload);
+    tcp_header_len = tcph->doff * 4;
+
+    if(tcp_payload_len >= 4 && memcmp(&signature, tcp_payload, 4) == 0)
     {
-        // Some debug info  
+        /* Some debug info */
         printk(KERN_INFO "Linear data: %u\n", skb_headlen(skb));
-        printk(KERN_INFO "Linear data TCP payload: %lu\n", np_data_tcp_pl);
+        printk(KERN_INFO "TCP payload len is %u\n", tcp_payload_len);
+        printk(KERN_INFO "TCP header len is %x\n", tcp_header_len);
+        /* 
+         * Calculating the TCP checksum: bulding pseudoheader and constructing the
+         * buffer to be passed to tcp_checksum function.
+         */
+        pseudo_header = (uint8_t*)kmalloc(TCP_PSEUDOHEADER_LEN, GFP_KERNEL);
+        
+        if(tcp_build_pseudoheader(iph, tcp_header_len + tcp_payload_len, pseudo_header) != 0)
+        {
+            printk(KERN_DEBUG "Error while building pseudoheader\n");
+            return NF_ACCEPT;
+        }
+    
+        buffer = (uint8_t*)kmalloc(TCP_PSEUDOHEADER_LEN + tcp_header_len + tcp_payload_len, GFP_KERNEL);
+        if(!buffer)
+        {
+            printk(KERN_DEBUG "Error while allocating memory for buffer\n");
+            return NF_ACCEPT;
+        }    
+        memcpy(buffer, pseudo_header, TCP_PSEUDOHEADER_LEN);
+        
+        /* Zeroing out checksum in TCP header before calculating checksum */
+        tcph->check = 0x0000;
+        memcpy(buffer + TCP_PSEUDOHEADER_LEN, tcph, tcp_header_len + tcp_payload_len);
+        checksum = tcp_checksum(buffer, TCP_PSEUDOHEADER_LEN + tcp_header_len + tcp_payload_len);
 
-        /* Leave checksum as it is */
+        printk(KERN_INFO "TCP checksum is %x\n", checksum);
+        /* Can double check by using tcp_v4_check */
+        //uint16_t c = tcp_v4_check( 
+        //                    tcp_header_len + tcp_payload_len, 
+        //                    iph->saddr, 
+        //                    iph->daddr, 
+        //                    csum_partial((char *)tcph, tcp_header_len + tcp_payload_len, 0)); 
+
+        tcph->check = htons(checksum);
+
+        kfree(buffer);
+        kfree(pseudo_header);
+
+        /* Write TCP checksum and tell Kernel/driver/Hardware not to re-calculate it */
         skb->ip_summed = CHECKSUM_NONE;
-
     }
 
     return NF_ACCEPT;

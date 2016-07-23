@@ -1,7 +1,6 @@
 obj-m += packet_mangle.o
-packet_mangle-objs := packet.o
+packet_mangle-objs := packet.o checksum.o
 
-LIBCRC_DIR = $(PWD)/libcrc
 KERNEL_BUILD = /lib/modules/$(shell uname -r)/build
 
 all:
