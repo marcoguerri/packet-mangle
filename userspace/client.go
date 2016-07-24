@@ -34,7 +34,6 @@ func main() {
     }
 
     ipaddr := net.ParseIP(*ip)
-
     if ipaddr == nil {
         fmt.Fprintf(os.Stderr, "IP address is not valid")
         os.Exit(1)
@@ -50,28 +49,22 @@ func main() {
     var curr_run int = *runs
 
     for {
-        
         if curr_run == 0 {
             break
         }
-
         conn, err := net.DialTimeout("tcp", tcpaddr.String(), time.Duration(2 * time.Second))
         if err != nil {
-            fmt.Fprintf(os.Stderr, "\n")
             if operr, ok := err.(*net.OpError); ok {
                 if operr.Err == syscall.ECONNREFUSED {
-                    fmt.Fprintf(os.Stderr, "Connection refused. ")
+                    fmt.Fprintf(os.Stderr, "\nConnection refused. ")
                     retry -= 1
-
                     if retry == 0 {
                         fmt.Fprintf(os.Stderr, "Will not retry...\n")
                         os.Exit(1)
                     }
-
                     fmt.Fprint(os.Stderr, "Retrying...\n")
                     time.Sleep(2 * time.Second)
                     continue
-
                  } else {
                     fmt.Fprintf(os.Stderr, "Error while connection to server: %s (%d)\n", operr.Err, operr.Err)
                     retry -= 1
@@ -83,8 +76,7 @@ func main() {
         /* Connection succeeded, reset retry counter */
         retry = 3
 
-        /* Reading payload, calculating md5sum and sending everything off to
-         * the client */
+        /* Reading payload, calculating md5sum and sending everything off to the client */
         data, err := ioutil.ReadFile(*payload_path)
         check(err)
         checksum := md5.Sum(data)
@@ -97,6 +89,5 @@ func main() {
         fmt.Fprintf(os.Stderr, "\rRun: %d", *runs - curr_run + 1)
         conn.Close()
         curr_run -= 1
-
     }
 }

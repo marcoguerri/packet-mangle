@@ -45,7 +45,9 @@ mangling_hook(void *priv,
     u32 tcp_payload_len = 0, tcp_header_len = 0;
     uint16_t checksum;
     
-   
+
+    // TODO: Check we are working with IPv4
+    
     /* Get IP header and check the transport protocol. Proceed only if it's TCP */
     iph = ip_hdr(skb);
     if (iph->protocol != IPPROTO_TCP)
