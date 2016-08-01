@@ -95,7 +95,7 @@ mangling_hook(void *priv,
         memcpy(buffer + TCP_PSEUDOHEADER_LEN, tcph, tcp_header_len + tcp_payload_len);
         checksum = tcp_checksum(buffer, TCP_PSEUDOHEADER_LEN + tcp_header_len + tcp_payload_len);
 
-        printk(KERN_INFO "TCP checksum is %x\n", checksum);
+        printk(KERN_INFO "TCP checksum should be %x\n", checksum);
         /* Can double check by using tcp_v4_check */
         //uint16_t c = tcp_v4_check( 
         //                    tcp_header_len + tcp_payload_len, 
@@ -103,9 +103,13 @@ mangling_hook(void *priv,
         //                    iph->daddr, 
         //                    csum_partial((char *)tcph, tcp_header_len + tcp_payload_len, 0)); 
 
-        tcph->check = htons(checksum);
-
-        kfree(buffer);
+        //tcph->check = htons(checksum);
+	
+	checksum = 0xBEEF;
+	tcph->check = htons(checksum);
+        printk(KERN_INFO "Corrupting checksum to 0xBEEF\n");
+        
+	kfree(buffer);
         kfree(pseudo_header);
 
         /* Write TCP checksum and tell Kernel/driver/Hardware not to re-calculate it */
