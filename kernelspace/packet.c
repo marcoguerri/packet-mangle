@@ -40,11 +40,11 @@ mangling_hook(void *priv,
     struct iphdr *iph;
     struct tcphdr *tcph;
 
-    u8 *tcp_payload, *pseudo_header, *buffer;
+    u8 *tcp_payload, *buffer;
+    struct tcp_pseudohdr_t *pseudo_header; 
     u8 signature[4] = {0xDE, 0xAD, 0xBE, 0xEF};
     u32 tcp_payload_len = 0, tcp_header_len = 0;
     uint16_t checksum;
-    
 
     // TODO: Check we are working with IPv4
     
@@ -64,6 +64,8 @@ mangling_hook(void *priv,
     tcp_payload_len = (u64)(skb_tail_pointer(skb) - tcp_payload);
     tcp_header_len = tcph->doff * 4;
 
+	
+    printk(KERN_INFO "%lu\n", sizeof(struct tcp_pseudohdr_t));
     if(tcp_payload_len >= 4 && memcmp(&signature, tcp_payload, 4) == 0)
     {
         /* Some debug info */
@@ -74,45 +76,48 @@ mangling_hook(void *priv,
          * Calculating the TCP checksum: bulding pseudoheader and constructing the
          * buffer to be passed to tcp_checksum function.
          */
-        pseudo_header = (uint8_t*)kmalloc(TCP_PSEUDOHEADER_LEN, GFP_KERNEL);
-        
-        if(tcp_build_pseudoheader(iph, tcp_header_len + tcp_payload_len, pseudo_header) != 0)
+        pseudo_header = (struct tcp_pseudohdr_t*)kmalloc(TCP_PSEUDOHEADER_LEN, GFP_KERNEL);
+        if(!pseudo_header)
         {
-            printk(KERN_DEBUG "Error while building pseudoheader\n");
+            printk(KERN_DEBUG "Error while allocating memory for pseudo header\n");
             return NF_ACCEPT;
         }
+        tcp_build_pseudoheader(iph, tcp_header_len + tcp_payload_len, pseudo_header);
     
         buffer = (uint8_t*)kmalloc(TCP_PSEUDOHEADER_LEN + tcp_header_len + tcp_payload_len, GFP_KERNEL);
-        if(!buffer)
+         if(!buffer)
         {
             printk(KERN_DEBUG "Error while allocating memory for buffer\n");
             return NF_ACCEPT;
         }    
-        memcpy(buffer, pseudo_header, TCP_PSEUDOHEADER_LEN);
+        
+        memcpy(buffer, pseudo_header, sizeof(struct tcp_pseudohdr_t));
         
         /* Zeroing out checksum in TCP header before calculating checksum */
         tcph->check = 0x0000;
-        memcpy(buffer + TCP_PSEUDOHEADER_LEN, tcph, tcp_header_len + tcp_payload_len);
-        checksum = tcp_checksum(buffer, TCP_PSEUDOHEADER_LEN + tcp_header_len + tcp_payload_len);
+        memcpy(buffer + sizeof(struct tcp_pseudohdr_t), tcph, tcp_header_len + tcp_payload_len);
+        checksum = tcp_checksum(buffer, sizeof(struct tcp_pseudohdr_t) + tcp_header_len + tcp_payload_len);
 
-        printk(KERN_INFO "TCP checksum should be %x\n", checksum);
+        printk(KERN_INFO "TCP checksum should be 0x%04x\n", htons(checksum));
+
         /* Can double check by using tcp_v4_check */
-        //uint16_t c = tcp_v4_check( 
-        //                    tcp_header_len + tcp_payload_len, 
-        //                    iph->saddr, 
-        //                    iph->daddr, 
-        //                    csum_partial((char *)tcph, tcp_header_len + tcp_payload_len, 0)); 
-
+        uint16_t checksum_kernel = tcp_v4_check( 
+                         tcp_header_len + tcp_payload_len, 
+	 	         iph->saddr, 
+                         iph->daddr, 
+		         csum_partial((char *)tcph, tcp_header_len + tcp_payload_len, 0)); 
+        printk(KERN_INFO "Checksum from kernel 0x%04x\n", checksum_kernel);
         //tcph->check = htons(checksum);
-	
-	checksum = 0xBEEF;
-	tcph->check = htons(checksum);
+    
+        /* Corrupting checksum */
+        checksum = 0xBEEF;
+        tcph->check = htons(checksum);
         printk(KERN_INFO "Corrupting checksum to 0xBEEF\n");
         
-	kfree(buffer);
+        kfree(buffer);
         kfree(pseudo_header);
 
-        /* Write TCP checksum and tell Kernel/driver/Hardware not to re-calculate it */
+        /* Write TCP checksum and tell Kernel/Driver/Hardware not to re-calculate it */
         skb->ip_summed = CHECKSUM_NONE;
     }
 
