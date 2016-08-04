@@ -54,23 +54,26 @@ func main() {
         }
         conn, err := net.DialTimeout("tcp", tcpaddr.String(), time.Duration(2 * time.Second))
         if err != nil {
-            if operr, ok := err.(*net.OpError); ok {
-                if operr.Err == syscall.ECONNREFUSED {
-                    fmt.Fprintf(os.Stderr, "\nConnection refused. ")
-                    retry -= 1
-                    if retry == 0 {
-                        fmt.Fprintf(os.Stderr, "Will not retry...\n")
-                        os.Exit(1)
+                if operr, ok := err.(*net.OpError); ok {
+                    if oserr, ok := operr.Err.(*os.SyscallError); ok {
+                        if oserr.Err == syscall.ECONNREFUSED {
+                            fmt.Fprintf(os.Stderr, "\nConnection refused. ")
+                            retry -= 1
+                            if retry == 0 {
+                                fmt.Fprintf(os.Stderr, "Will not retry...\n")
+                                os.Exit(1) 
+                            }  
+                            fmt.Fprint(os.Stderr, "Retrying...\n")
+                            time.Sleep(2 * time.Second)
+                            continue
+                        }
                     }
-                    fmt.Fprint(os.Stderr, "Retrying...\n")
-                    time.Sleep(2 * time.Second)
-                    continue
-                 } else {
-                    fmt.Fprintf(os.Stderr, "Error while connection to server: %s (%d)\n", operr.Err, operr.Err)
-                    retry -= 1
-                    continue 
-                 }
-            }
+                    /* Error, terminating. */
+                    fmt.Fprintf(os.Stderr, "Error while connection to server: %s (%d)\n", operr.Err, operr.Err) 
+                    os.Exit(1)
+                }
+                fmt.Fprintf(os.Stderr, "Error while connecting to server: %s\n", err)
+                os.Exit(1)
         }
 
         /* Connection succeeded, reset retry counter */
