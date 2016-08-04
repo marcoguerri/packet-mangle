@@ -11,11 +11,12 @@ from time import sleep
 PORT        = 8080
 BUFF_SIZE   = 4096
 
-run = True
+eintr = False
 
 def sigterm_handler(*args):
+    global eintr
     sys.stderr.write("Got SIGTERM, exiting...\n")
-    run = False
+    eintr = True
 
 
 def recv_payload(conn):
@@ -54,7 +55,7 @@ def run():
     Main function which listens for incoming connections
     """
 
-    global run
+    global eintr
     if(len(sys.argv) < 2):
         sys.stderr.write("Please pass the IP to bind to")
         sys.exit(1)
@@ -74,9 +75,8 @@ def run():
     s.listen(1)
     received = 0
     corrupted = 0
-    while run:
-            
-            try:
+    while not eintr:
+	    try:
                 conn, addr = s.accept()
             except Exception, e:
                 if not (type(e) == socket.error and e.errno == errno.EINTR):
@@ -112,4 +112,3 @@ def run():
 
 if __name__ == '__main__':
     run()
-
